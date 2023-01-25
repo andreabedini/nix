@@ -111,6 +111,14 @@
           ]
           ++ lib.optionals stdenv.hostPlatform.isLinux [(buildPackages.util-linuxMinimal or buildPackages.utillinuxMinimal)];
 
+        wasmtime_4_0_0 = wasmtime.overrideAttrs (old: {
+          version = "4.0.0";
+          src = old.src.overrideAttrs (oldsrc: {
+            hash = "sha256-Vw3+KlAuCQiyBfPOZrUotgrdkG+FRjXg8AxAanfbwJQ=";
+            rev = "v4.0.0";
+          });
+        });
+
         buildDeps =
           [ curl
             bzip2 xz brotli editline
@@ -120,6 +128,8 @@
             lowdown-nix
             gtest
             rapidcheck
+            wasmtime_4_0_0
+            wasmtime_4_0_0.dev
           ]
           ++ lib.optionals stdenv.isLinux [libseccomp]
           ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium
