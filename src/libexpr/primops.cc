@@ -14,6 +14,7 @@
 
 #include <boost/container/small_vector.hpp>
 #include <nlohmann/json.hpp>
+#include <wasmtime.hh>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -22,10 +23,10 @@
 #include <algorithm>
 #include <cstring>
 #include <regex>
+#include <iostream> // TMP
 #include <dlfcn.h>
 
 #include <cmath>
-
 
 namespace nix {
 
@@ -340,6 +341,24 @@ void prim_importNative(EvalState & state, const PosIdx pos, Value * * args, Valu
     (func)(state, v);
 
     /* We don't dlclose because v may be a primop referencing a function in the shared object file */
+}
+
+void prim_importWASM(EvalState & state, const PosIdx pos, Value * * args, Value & v)
+{
+  auto path = realisePath(state, pos, *args[0]);
+  auto s = readFile(path);
+
+  wasmtime::Engine engine;
+  auto module = wasmtime::Module::compile(engine, s).unwrap();
+  wasmtime::Store store(engine);
+  wasmtime::Func host_func = wasmtime::Func::wrap(store, []() {
+      std::cout << "Calling back...\n";
+  });
+  auto instance = wasmtime::Instance::create(store, module, {host_func}).unwrap();
+  auto run = std::get<wasmtime::Func>(*instance.get(store, "run"));
+  run.call(store, {}).unwrap();
+
+  v.mkNull();
 }
 
 
@@ -4087,6 +4106,8 @@ void EvalState::createBaseEnv()
         addPrimOp("__importNative", 2, prim_importNative);
         addPrimOp("__exec", 1, prim_exec);
     }
+
+    addPrimOp("__importWASM", 1, prim_importWASM);
 
     addPrimOp({
         .fun = evalSettings.traceVerbose ? prim_trace : prim_second,

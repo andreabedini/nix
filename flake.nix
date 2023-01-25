@@ -111,13 +111,22 @@
           ]
           ++ lib.optionals stdenv.hostPlatform.isLinux [(buildPackages.util-linuxMinimal or buildPackages.utillinuxMinimal)];
 
-        wasmtime_4_0_0 = wasmtime.overrideAttrs (old: {
-          version = "4.0.0";
-          src = old.src.overrideAttrs (oldsrc: {
-            hash = "sha256-Vw3+KlAuCQiyBfPOZrUotgrdkG+FRjXg8AxAanfbwJQ=";
-            rev = "v4.0.0";
-          });
-        });
+        wasmtime-cpp = stdenv.mkDerivation rec {
+          pname = "wasmtime-cpp";
+          version = "2.0.0";
+          propagatedBuildInputs = [ wasmtime ];
+          src = fetchFromGitHub {
+            owner = "bytecodealliance";
+            repo = pname;
+            rev = "v${version}";
+            sha256 = "sha256-60Y8aE/nIeDbCtx16+wTY7TEDKlWVzBPx+FI7fiWU+k=";
+          };
+          phases = [ "installPhase" ];
+          installPhase = ''
+            mkdir $out
+            cp -r ${src}/include $out
+          '';
+        }; 
 
         buildDeps =
           [ curl
@@ -128,8 +137,9 @@
             lowdown-nix
             gtest
             rapidcheck
-            wasmtime_4_0_0
-            wasmtime_4_0_0.dev
+            wasmtime
+            wasmtime.dev
+            wasmtime-cpp
           ]
           ++ lib.optionals stdenv.isLinux [libseccomp]
           ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium
