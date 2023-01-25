@@ -102,6 +102,7 @@
             buildPackages.autoconf-archive
             buildPackages.autoreconfHook
             buildPackages.pkg-config
+            buildPackages.bear
 
             # Tests
             buildPackages.git
