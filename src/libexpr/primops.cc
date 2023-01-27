@@ -352,36 +352,74 @@ T nix_unwrap(EvalState & state, wasmtime::Result<T, E> result) {
   state.debugThrowLastTrace(ThrownError(s));
 }
 
-void prim_importWASM(EvalState & state, const PosIdx pos, Value * * args, Value & v)
-{
+void prim_importWASM(EvalState &state, const PosIdx pos, Value **args, Value &v) {
+
+  using namespace wasmtime;
+
+  Engine engine;
+  wasmtime::Store store(engine);
+
+  // add stuff to the store
+
+  Func host_Value_mkNull =
+      Func::wrap(store, [](std::optional<wasmtime::ExternRef> ref) {
+        auto v = std::any_cast<Value *>(ref->data());
+        v->mkNull();
+      });
+
+  Func host_Value_mkInt = wasmtime::Func::wrap(
+      store, [](std::optional<ExternRef> ref, NixInt n) {
+        auto v = std::any_cast<Value *>(ref->data());
+        v->mkInt(n);
+      });
+
+  // read module
+
   auto path = realisePath(state, pos, *args[0]);
   auto s = readFile(path);
 
-  wasmtime::Engine engine;
-  auto module = nix_unwrap(state, wasmtime::Module::compile(engine, s));
+  auto module = nix_unwrap(state, Module::compile(engine, s));
 
-  wasmtime::Store store(engine);
+  auto instance = nix_unwrap(state, Instance::create(store, module, {host_Value_mkNull, host_Value_mkInt}));
 
-  wasmtime::Func host_Value_mkNull = wasmtime::Func::wrap(store, [](std::optional<wasmtime::ExternRef> ref) {
-      auto v = std::any_cast<Value *>(ref->data());
-      v->mkNull();
-  });
+  auto attrs = state.buildBindings(module.exports().size());
 
-  wasmtime::Func host_Value_mkInt = wasmtime::Func::wrap(store, [](std::optional<wasmtime::ExternRef> ref, NixInt n) {
-      auto v = std::any_cast<Value *>(ref->data());
-      v->mkInt(n);
-  });
+  for (ExportType::Ref e : module.exports()) {
 
-  auto instance = nix_unwrap(state, wasmtime::Instance::create(store, module, {
-      host_Value_mkNull,
-      host_Value_mkInt
-  }));
+    std::string name{e.name()};
+
+    auto export_ty = std::get<FuncType::Ref>(ExternType::from_export(e));
+
+    // the first argument is an external reference to the return value to be built
+    auto arity = export_ty.params().size() - 1; 
+    std::vector<std::string> args;
+    auto i = export_ty.params().begin();
+    auto i_end = export_ty.params().end();
+    i ++; 
+    while (i != i_end) {
+      std::ostringstream os;
+      os << i->kind();
+      args.push_back(os.str());
+    }
+
+    attrs.alloc(name).mkPrimOp(new PrimOp{
+        .fun = [](EvalState &state, const PosIdx post, Value **args, Value &v) {
+            state.debugThrowLastTrace(Abort("called"));
+        },
+        .arity = arity,
+        .name = name,
+        .args = args,
+        .doc = "",
+    });
+  }
+  v.mkAttrs(attrs);
+  
+  /*
 
   auto run = std::get<wasmtime::Func>(*instance.get(store, "run"));
 
-  auto result = nix_unwrap(state, run.call(store, {
-      wasmtime::ExternRef{&v}
-  }));
+  auto result = nix_unwrap(state, run.call(store, {wasmtime::ExternRef{&v}}));
+  */
 }
 
 
