@@ -343,22 +343,45 @@ void prim_importNative(EvalState & state, const PosIdx pos, Value * * args, Valu
     /* We don't dlclose because v may be a primop referencing a function in the shared object file */
 }
 
+template<typename T, typename E>
+T nix_unwrap(EvalState & state, wasmtime::Result<T, E> result) {
+  if (result) {
+    return result.ok();
+  }
+  auto s = result.err().message();
+  state.debugThrowLastTrace(ThrownError(s));
+}
+
 void prim_importWASM(EvalState & state, const PosIdx pos, Value * * args, Value & v)
 {
   auto path = realisePath(state, pos, *args[0]);
   auto s = readFile(path);
 
   wasmtime::Engine engine;
-  auto module = wasmtime::Module::compile(engine, s).unwrap();
-  wasmtime::Store store(engine);
-  wasmtime::Func host_func = wasmtime::Func::wrap(store, []() {
-      std::cout << "Calling back...\n";
-  });
-  auto instance = wasmtime::Instance::create(store, module, {host_func}).unwrap();
-  auto run = std::get<wasmtime::Func>(*instance.get(store, "run"));
-  run.call(store, {}).unwrap();
+  auto module = nix_unwrap(state, wasmtime::Module::compile(engine, s));
 
-  v.mkNull();
+  wasmtime::Store store(engine);
+
+  wasmtime::Func host_Value_mkNull = wasmtime::Func::wrap(store, [](std::optional<wasmtime::ExternRef> ref) {
+      auto v = std::any_cast<Value *>(ref->data());
+      v->mkNull();
+  });
+
+  wasmtime::Func host_Value_mkInt = wasmtime::Func::wrap(store, [](std::optional<wasmtime::ExternRef> ref, NixInt n) {
+      auto v = std::any_cast<Value *>(ref->data());
+      v->mkInt(n);
+  });
+
+  auto instance = nix_unwrap(state, wasmtime::Instance::create(store, module, {
+      host_Value_mkNull,
+      host_Value_mkInt
+  }));
+
+  auto run = std::get<wasmtime::Func>(*instance.get(store, "run"));
+
+  auto result = nix_unwrap(state, run.call(store, {
+      wasmtime::ExternRef{&v}
+  }));
 }
 
 
