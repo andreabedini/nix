@@ -78,6 +78,10 @@ StringMap EvalState::realiseContext(const PathSet & context)
             "cannot build '%1%' during evaluation because the option 'allow-import-from-derivation' is disabled",
             store->printStorePath(drvs.begin()->drvPath)));
 
+    for (auto & drv : drvs) {
+        printError("Found IFD '%1%'", store->printStorePath(drv.drvPath));
+    }
+
     /* Build/substitute the context. */
     std::vector<DerivedPath> buildReqs;
     for (auto & d : drvs) buildReqs.emplace_back(DerivedPath { d });
